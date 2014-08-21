@@ -141,7 +141,9 @@ class Subnet():
             return 0
     def get_gatewaymac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
-        return ethernet.as_eth_addr(self.gatewaymac)
+	temp = ethernet.as_eth_addr(self.gatewaymac)
+        temp = re.sub(r':(\d):',r':0\1:', temp)
+        return temp
 
     def get_sourcemac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
@@ -173,12 +175,21 @@ class Netfilter():
 
     switchsidemac = None
     radiosilence = False
-    gatewayinterface = "eth8"
+    gatewayinterface = "eth9"
     bridgeinterface = "mibr"
     bridgeip = "169.254.66.77"
     def __init__(self, subnet, bridge):
         self.subnet = subnet
+        os.system("sh ./ebtables-init")
+        os.system("ebtables -A OUTPUT -j DROP")
+        os.system("arptables -A OUTPUT -j DROP")
 
+        
+
+    def updatetables(self):
+        os.system("sh ./ebtables-init")
+        os.system("ebtables -A OUTPUT -j DROP")
+        os.system("arptables -A OUTPUT -j DROP")
         print "searching for mac: %s ..." % subnet.get_gatewaymac()
         f=os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" % (self.bridgeinterface, subnet.get_gatewaymac()))            
         portnumber =  f.read().rstrip()
@@ -207,13 +218,7 @@ class Netfilter():
         print "switchsidemac: %s" % matches.group(0)
         self.switchsidemac = matches.group(0)
         os.system("macchanger -m %s %s" % (self.switchsidemac, bridge.bridgename))
-        
-
-    def updatetables(self):
         print "Updating netfilter"
-        os.system("sh ./ebtables-init")
-        os.system("ebtables -A OUTPUT -j DROP")
-        os.system("arptables -A OUTPUT -j DROP")
         os.system("ip addr add 169.254.66.77/24 dev mibr")
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" % (self.switchsidemac, self.gatewayinterface, self.subnet.get_sourcemac()))
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" % (self.switchsidemac, self.bridgeinterface, self.subnet.get_sourcemac()))
@@ -274,24 +279,25 @@ if __name__ == '__main__':
     thread.start()
 
 
+    netfilter = Netfilter(subnet, bridge)
     while(1):
-        time.sleep(20)
         if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
             print subnet
-            netfilter = Netfilter(subnet, bridge)
-            netfilter.updatetables()
 
+            netfilter.updatetables()
             break
         else:
             print "not enough info..."
             print subnet
+	    time.sleep(20)
 
     # setup routing and dhcp on builtin ethernet
     os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
-    os.system("ifconfig wlan0 169.254.44.44/24")
-    os.system("ifconfig wlan0 up")
-    os.system("/usr/sbin/dhcpd -4 -pf /run/dhcpd4.pid wlan0")
-    os.system("hostapd -B /etc/hostapd/hostapd.conf")
+#    os.system("ifconfig wlan0 169.254.44.44/24")
+#    os.system("ifconfig wlan0 up")
+    #os.system("/usr/sbin/dhcpd -4 -pf /run/dhcpd4.pid wlan0")
+#    os.system("udhcpd /etc/udhcpd-wlan0.conf")
+#    os.system("/usr/local/bin/hostapd -B /etc/hostapd/hostapd.conf")
     time.sleep(5)
 
     ## arp setup ##
