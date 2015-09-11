@@ -245,6 +245,8 @@ class Bridge():
         os.system("brctl addbr %s" % bridgename)
 
         for interface in interfaces + [bridgename]:
+            if not args.enable_ipv6:
+                os.system("sysctl -w net.ipv6.conf.%s.disable_ipv6=1" % interface)
             os.system("sysctl -w net.ipv6.conf.%s.autoconf=0" % interface)
             os.system("sysctl -w net.ipv6.conf.%s.accept_ra=0" % interface)
             if interface != bridgename:
@@ -313,13 +315,14 @@ def main():
 
 		    time.sleep(20)
     except KeyboardInterrupt:
-		pass # handle ctrl-c
+        pass # handle ctrl-c
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BitM')
     parser.add_argument('ifaces', metavar="IFACE", nargs="*",
                         default=["eth1", "eth2"], help='Two interfaces')
+    parser.add_argument('-6', '--enable-ipv6', action='store_true')
     args = parser.parse_args()
 
     if len(args.ifaces) not in (0, 2):
