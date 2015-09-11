@@ -254,10 +254,10 @@ class Bridge():
         os.system("echo 8 > /sys/class/net/mibr/bridge/group_fwd_mask")
 
 
+def main():
 
 
 
-if __name__ == '__main__':
     #dev = getInterface()
     dev = 'eth1'
     bridge = Bridge("mibr", ["eth2", "eth1"])
@@ -270,7 +270,6 @@ if __name__ == '__main__':
     # Start sniffing thread and finish main thread.
     thread = DecoderThread(p,subnet,arptable)
     thread.start()
-
 
     netfilter = Netfilter(subnet, bridge)
     while(1):
@@ -307,3 +306,7 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
 		pass # handle ctrl-c
 
+
+if __name__ == '__main__':
+
+    main()
