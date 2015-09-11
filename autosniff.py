@@ -5,6 +5,7 @@
 import sys
 import os
 import time
+import argparse
 
 import string
 import struct
@@ -267,13 +268,12 @@ def main():
             print "Command '%s' is missing. Please install." % d
             sys.exit(1)
 
-    #dev = getInterface()
-    dev = 'eth1'
-    bridge = Bridge("mibr", ["eth2", "eth1"])
+    bridge = Bridge("mibr", args.ifaces)
     # Open interface for capturing.
-    p = open_live(dev, 1500, 0, 100)
+    p = open_live(args.ifaces[0], 1500, 0, 100)
 
-    print "Listening on %s: net=%s, mask=%s, linktype=%d" % (dev, p.getnet(), p.getmask(), p.datalink())
+    print "Listening on %s: net=%s, mask=%s, linktype=%d" % \
+          (args.ifaces[0], p.getnet(), p.getmask(), p.datalink())
     subnet = Subnet()
     arptable = ArpTable()
     # Start sniffing thread and finish main thread.
@@ -317,5 +317,13 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='BitM')
+    parser.add_argument('ifaces', metavar="IFACE", nargs="*",
+                        default=["eth1", "eth2"], help='Two interfaces')
+    args = parser.parse_args()
+
+    if len(args.ifaces) not in (0, 2):
+        parser.error('Either give two interfaces or none to use the ' +\
+                     'default "eth1 eth2"')
 
     main()
