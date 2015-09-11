@@ -242,22 +242,15 @@ class Bridge():
     def __init__(self, bridgename, interfaces):
         self.bridgename = bridgename
         os.system("brctl addbr %s" % bridgename)
-        os.system("ip link set %s down" % bridgename)
-        os.system("ip addr flush dev %s" % bridgename)
-        os.system("macchanger -p %s" % bridgename)
-        os.system("ip link set up %s" % bridgename)
 
-        for interface in interfaces:
-            os.system("ip link set %s down" % interface)
+        for interface in interfaces + [bridgename]:
             os.system("sysctl -w net.ipv6.conf.%s.autoconf=0" % interface)
             os.system("sysctl -w net.ipv6.conf.%s.accept_ra=0" % interface)
-            os.system("brctl addif %s %s" % (bridgename, interface))
-            os.system("ip link set %s up" % interface)
-            os.system("ip link set promisc on %s" % interface)
+            if interface != bridgename:
+                os.system("brctl addif %s %s" % (bridgename, interface))
+            os.system("ip link set %s up promisc on" % interface)
 
-        os.system("sysctl -w net.ipv6.conf.%s.autoconf=0" % bridgename)
-        os.system("sysctl -w net.ipv6.conf.%s.accept_ra=0" % bridgename)
-        os.system("ip link set promisc on %s" % bridgename)
+        # Allow 802.1X traffic to pass the bridge
         os.system("echo 8 > /sys/class/net/mibr/bridge/group_fwd_mask")
 
 
