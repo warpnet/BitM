@@ -181,9 +181,9 @@ class Netfilter:
         os.system("sh ./ebtables-init")
         os.system("ebtables -A OUTPUT -j DROP")
         os.system("arptables -A OUTPUT -j DROP")
-        print "searching for mac: %s ..." % subnet.get_gatewaymac()
+        print "searching for mac: %s ..." % self.subnet.get_gatewaymac()
         f = os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" %
-                     (self.bridgeinterface, subnet.get_gatewaymac()))
+                     (self.bridgeinterface, self.subnet.get_gatewaymac()))
         portnumber = f.read().rstrip()
         f.close()
         if portnumber == "":
@@ -210,7 +210,7 @@ class Netfilter:
         matches = re.search("..:..:..:..:..:..", result)
         print "switchsidemac: %s" % matches.group(0)
         self.switchsidemac = matches.group(0)
-        os.system("macchanger -m %s %s" % (self.switchsidemac, bridge.bridgename))
+        os.system("macchanger -m %s %s" % (self.switchsidemac, self.bridge.bridgename))
         print "Updating netfilter"
         os.system("ip addr add 169.254.66.77/24 dev mibr")
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
