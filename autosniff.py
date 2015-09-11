@@ -255,6 +255,9 @@ class Bridge():
 
 
 def main():
+    if os.getuid() != 0:
+        print "You need to run BitM as root!"
+        sys.exit(1)
 
 
 
