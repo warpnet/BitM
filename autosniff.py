@@ -259,7 +259,13 @@ def main():
         print "You need to run BitM as root!"
         sys.exit(1)
 
+    dependencies = ['macchanger', 'brctl', 'ip', 'sysctl', 'arp',
+                    'iptables', 'arptables', 'ebtables']
 
+    for d in dependencies:
+        if os.system("which %s >/dev/null" % d):
+            print "Command '%s' is missing. Please install." % d
+            sys.exit(1)
 
     #dev = getInterface()
     dev = 'eth1'
