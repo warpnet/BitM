@@ -289,6 +289,15 @@ class Bridge:
         for interface in [self.bridgename] + self.interfaces:
             os.system("ip link set %s up" % interface)
 
+    def down(self):
+        for interface in [self.bridgename] + self.interfaces:
+            os.system("ip link set %s down" % interface)
+
+    def destroy(self):
+        self.down()
+        os.system("brctl delbr %s" % self.bridgename)
+        os.system("sysctl --system")
+
 
 def main():
     if os.getuid() != 0:
@@ -339,6 +348,7 @@ def main():
 
     except KeyboardInterrupt:
         thread.stop()
+        bridge.destroy()
         netfilter.reset()
         sys.exit(0)
 
