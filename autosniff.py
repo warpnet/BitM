@@ -179,6 +179,7 @@ class Netfilter:
 
     def __init__(self, subnet, bridge):
         self.subnet = subnet
+        self.bridge = bridge
 
         self.flushtables()
         os.system("ebtables -A OUTPUT -j DROP")
