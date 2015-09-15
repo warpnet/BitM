@@ -20,9 +20,12 @@ from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
 
 
 class DecoderThread(Thread):
-    def __init__(self, pcapObj, subnet, arptable):
+    def __init__(self, bridge, subnet, arptable):
+        # Open interface for capturing.
+        self.pcap = open_live(bridge.bridgename, 1500, 0, 100)
+
         # Query the type of the link and instantiate a decoder accordingly.
-        datalink = pcapObj.datalink()
+        datalink = self.pcap.datalink()
         if pcapy.DLT_EN10MB == datalink:
             self.decoder = EthDecoder()
         elif pcapy.DLT_LINUX_SLL == datalink:
@@ -30,7 +33,7 @@ class DecoderThread(Thread):
         else:
             raise Exception("Datalink type not supported: " % datalink)
 
-        self.pcap = pcapObj
+        self.bridge = bridge
         self.subnet = subnet
         self.arptable = arptable
         self.running = True
@@ -45,6 +48,7 @@ class DecoderThread(Thread):
 
     def stop(self):
         self.running = False
+        time.sleep(0.1)
 
     def packetHandler(self, hdr, data):
         e = self.decoder.decode(data)
@@ -181,9 +185,13 @@ class Netfilter:
         self.subnet = subnet
         self.bridge = bridge
 
+        self.inittables()
+
+    def inittables(self):
         self.flushtables()
-        os.system("ebtables -A OUTPUT -j DROP")
-        os.system("arptables -A OUTPUT -j DROP")
+        os.system("iptables -P OUTPUT DROP")
+        os.system("ebtables -P OUTPUT DROP")
+        os.system("arptables -P OUTPUT DROP")
 
     def flushtables(self):
         os.system("iptables -F")
@@ -192,10 +200,14 @@ class Netfilter:
         os.system("ebtables -t nat -F")
         os.system("arptables -F")
 
+    def reset(self):
+        self.flushtables()
+        os.system("iptables -P OUTPUT ACCEPT")
+        os.system("ebtables -P OUTPUT ACCEPT")
+        os.system("arptables -P OUTPUT ACCEPT")
+
     def updatetables(self):
         self.flushtables()
-        os.system("ebtables -A OUTPUT -j DROP")
-        os.system("arptables -A OUTPUT -j DROP")
         print "searching for mac: %s ..." % self.subnet.get_gatewaymac()
         f = os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" %
                      (self.bridgeinterface, self.subnet.get_gatewaymac()))
@@ -251,24 +263,31 @@ class Netfilter:
 class Bridge:
     subnet = None
     bridgename = None
+    interfaces = []
 
     def __init__(self, bridgename, interfaces):
         self.bridgename = bridgename
+        self.interfaces = interfaces
         os.system("brctl addbr %s" % bridgename)
 
-        for interface in interfaces + [bridgename]:
+        for interface in [self.bridgename] + self.interfaces:
+            os.system("ip link set %s down" % interface)
             if not args.enable_ipv6:
                 os.system("sysctl -w net.ipv6.conf.%s.disable_ipv6=1" % interface)
             os.system("sysctl -w net.ipv6.conf.%s.autoconf=0" % interface)
             os.system("sysctl -w net.ipv6.conf.%s.accept_ra=0" % interface)
             if interface != bridgename:
                 os.system("brctl addif %s %s" % (bridgename, interface))
-            os.system("ip link set %s up promisc on" % interface)
+            os.system("ip link set %s promisc on" % interface)
 
         os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
 
         # Allow 802.1X traffic to pass the bridge
         os.system("echo 8 > /sys/class/net/mibr/bridge/group_fwd_mask")
+
+    def up(self):
+        for interface in [self.bridgename] + self.interfaces:
+            os.system("ip link set %s up" % interface)
 
 
 def main():
@@ -285,18 +304,19 @@ def main():
             sys.exit(1)
 
     bridge = Bridge("mibr", args.ifaces)
-    # Open interface for capturing.
-    p = open_live(args.ifaces[0], 1500, 0, 100)
-
-    print "Listening on %s: net=%s, mask=%s, linktype=%d" % \
-          (args.ifaces[0], p.getnet(), p.getmask(), p.datalink())
     subnet = Subnet()
+    netfilter = Netfilter(subnet, bridge)
     arptable = ArpTable()
+
+    bridge.up()
+
     # Start sniffing thread and finish main thread.
-    thread = DecoderThread(p, subnet, arptable)
+    thread = DecoderThread(bridge, subnet, arptable)
     thread.start()
 
-    netfilter = Netfilter(subnet, bridge)
+    print "Listening on %s: net=%s, mask=%s, linktype=%d" % \
+          (bridge.bridgename, thread.pcap.getnet(), thread.pcap.getmask(), thread.pcap.datalink())
+
     try:
         while True:
             if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
@@ -319,7 +339,7 @@ def main():
 
     except KeyboardInterrupt:
         thread.stop()
-        netfilter.flushtables()
+        netfilter.reset()
         sys.exit(0)
 
 
