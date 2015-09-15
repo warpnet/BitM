@@ -179,12 +179,20 @@ class Netfilter:
 
     def __init__(self, subnet, bridge):
         self.subnet = subnet
-        os.system("sh ./ebtables-init")
+
+        self.flushtables()
         os.system("ebtables -A OUTPUT -j DROP")
         os.system("arptables -A OUTPUT -j DROP")
 
+    def flushtables(self):
+        os.system("iptables -F")
+        os.system("iptables -F -t nat")
+        os.system("ebtables -F")
+        os.system("ebtables -t nat -F")
+        os.system("arptables -F")
+
     def updatetables(self):
-        os.system("sh ./ebtables-init")
+        self.flushtables()
         os.system("ebtables -A OUTPUT -j DROP")
         os.system("arptables -A OUTPUT -j DROP")
         print "searching for mac: %s ..." % self.subnet.get_gatewaymac()
@@ -305,13 +313,12 @@ def main():
             f = open('/root/subnetinfo', 'w')
             f.write(str(subnet))
             f.close()
-
             arptable.updatekernel()
-
             time.sleep(20)
 
     except KeyboardInterrupt:
         thread.stop()
+        netfilter.flushtables()
         sys.exit(0)
 
 
