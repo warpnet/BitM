@@ -33,12 +33,18 @@ class DecoderThread(Thread):
         self.pcap = pcapObj
         self.subnet = subnet
         self.arptable = arptable
+        self.running = True
+
         Thread.__init__(self)
 
     def run(self):
         # Sniff ad infinitum.
         # PacketHandler shall be invoked by pcap for every packet.
-        self.pcap.loop(0, self.packetHandler)
+        while self.running:
+            self.pcap.dispatch(1, self.packetHandler)
+
+    def stop(self):
+        self.running = False
 
     def packetHandler(self, hdr, data):
         e = self.decoder.decode(data)
@@ -282,19 +288,19 @@ def main():
     thread.start()
 
     netfilter = Netfilter(subnet, bridge)
-    while True:
-        if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
-            print subnet
-
-            netfilter.updatetables()
-            break
-        else:
-            print "not enough info..."
-            print subnet
-        time.sleep(20)
-
-    # arp setup
     try:
+        while True:
+            if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
+                print subnet
+
+                netfilter.updatetables()
+                break
+            else:
+                print "not enough info..."
+                print subnet
+            time.sleep(20)
+
+        # arp setup
         while True:
             f = open('/root/subnetinfo', 'w')
             f.write(str(subnet))
@@ -303,8 +309,10 @@ def main():
             arptable.updatekernel()
 
             time.sleep(20)
+
     except KeyboardInterrupt:
-        pass  # handle ctrl-c
+        thread.stop()
+        sys.exit(0)
 
 
 if __name__ == '__main__':
