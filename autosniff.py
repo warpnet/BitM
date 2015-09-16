@@ -65,7 +65,7 @@ class DecoderThread(Thread):
                 eapr = eap.child()
                 # Only client sends responses with identity
                 if eap.get_code() == eap.RESPONSE and eapr.get_type() == eapr.IDENTITY:
-                    self.subnet.sourcemac = e.get_ether_shost()
+                    self.subnet.clientmac = e.get_ether_shost()
 
         elif e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
             ip = e.child()
@@ -73,8 +73,8 @@ class DecoderThread(Thread):
             # Uneven but not 1 or 255 ttl means it's probably coming from a router
             if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
                 self.subnet.gatewaymac = e.get_ether_shost()
-                self.subnet.sourcemac = e.get_ether_dhost()
-                self.subnet.sourceaddress = ip.get_ip_dst()
+                self.subnet.clientmac = e.get_ether_dhost()
+                self.subnet.clientip = ip.get_ip_dst()
 
         elif e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
             arp = e.child()
@@ -109,13 +109,13 @@ class ArpTable:
 
 # Only supports /24 or smaller
 class Subnet:
-    sourcemac = None
+    clientmac = None
     gatewaymac = None
     subnet = None
     minaddress = None
     maxaddress = None
-    sourceaddress = None
-    gatewayaddress = ""
+    clientip = ""
+    gatewayip = ""
 
     def registeraddress(self, ip_array):
         if self.printip(ip_array) == "0.0.0.0":
@@ -161,9 +161,9 @@ class Subnet:
         temp = ethernet.as_eth_addr(self.gatewaymac)
         return re.sub(r':(\d):', r':0\1:', temp)
 
-    def get_sourcemac(self):
+    def get_clientmac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
-        temp = ethernet.as_eth_addr(self.sourcemac)
+        temp = ethernet.as_eth_addr(self.clientmac)
         return re.sub(r':(\d):', r':0\1:', temp)
 
     def __str__(self):
@@ -172,12 +172,12 @@ class Subnet:
         if self.minaddress and self.maxaddress:
             output += "cidr bits: %i\n" % self.getcidr()
 
-        if self.sourcemac and self.gatewaymac:
+        if self.clientmac and self.gatewaymac:
             output += "source: %s gateway: %s\n" %\
-                      (self.get_sourcemac(), self.get_gatewaymac())
+                      (self.get_clientmac(), self.get_gatewaymac())
 
-        if self.sourceaddress:
-            output += "source ip: %s gateway ip: %s\n" % (self.sourceaddress, self.gatewayaddress)
+        if self.clientip:
+            output += "source ip: %s gateway ip: %s\n" % (self.clientip, self.gatewayip)
 
         if output == "":
             return "Network config unknown"
@@ -191,8 +191,6 @@ class Netfilter:
     bridge = None
 
     radiosilence = False
-    gatewayinterface = "ethX"
-
     def __init__(self, subnet, bridge):
         self.subnet = subnet
         self.bridge = bridge
@@ -223,18 +221,18 @@ class Netfilter:
         print "Updating netfilter"
         os.system("ip addr add 169.254.66.77/24 dev %s" % self.bridge.bridgename)
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.bridge.ifmacs[self.bridge.switchsideint], self.gatewayinterface, self.subnet.get_sourcemac()))
+                  (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.switchsideint, self.subnet.get_clientmac()))
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.bridgename, self.subnet.get_sourcemac()))
+                  (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.bridgename, self.subnet.get_clientmac()))
 
         os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridge.bridgename, self.subnet.get_gatewaymac()))
         print "[*] Setting up layer 3 NAT"
         os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p tcp -j SNAT --to %s:61000-62000" %
-                  (self.bridge.bridgename,  self.subnet.sourceaddress))
+                  (self.bridge.bridgename,  self.subnet.clientip))
         os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p udp -j SNAT --to %s:61000-62000" %
-                  (self.bridge.bridgename,  self.subnet.sourceaddress))
+                  (self.bridge.bridgename,  self.subnet.clientip))
         os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p icmp -j SNAT --to %s" %
-                  (self.bridge.bridgename,  self.subnet.sourceaddress))
+                  (self.bridge.bridgename,  self.subnet.clientip))
         if not self.radiosilence:
             os.system("ebtables -D OUTPUT -j DROP")
             os.system("arptables -D OUTPUT -j DROP")
@@ -295,7 +293,7 @@ class Bridge:
     def setinterfacesides(self):
         self.switchsideint = self.srcmac2bridgeint(self.subnet.get_gatewaymac())
         print "switchside interface: %s - %s" % (self.switchsideint, self.ifmacs[self.switchsideint])
-        self.clientsiteint = self.srcmac2bridgeint(self.subnet.get_sourcemac())
+        self.clientsiteint = self.srcmac2bridgeint(self.subnet.get_clientmac())
         print "clientside interface: %s - %s" % (self.clientsiteint, self.ifmacs[self.clientsiteint])
 
     def up(self):
@@ -341,7 +339,7 @@ def main():
 
     try:
         while True:
-            if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
+            if subnet.clientip and subnet.gatewaymac and subnet.clientmac:
                 print subnet
 
                 bridge.setinterfacesides()
