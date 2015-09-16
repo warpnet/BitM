@@ -15,6 +15,7 @@ import socket
 import pcapy
 from pcapy import open_live
 import impacket
+import impacket.eap
 import impacket.ImpactPacket
 from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
 
@@ -52,7 +53,17 @@ class DecoderThread(Thread):
 
     def packetHandler(self, hdr, data):
         e = self.decoder.decode(data)
-        if e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
+
+        if e.get_ether_type() == impacket.eap.DOT1X_AUTHENTICATION:
+            eapol = e.child()
+            if eapol.get_packet_type() == eapol.EAP_PACKET:
+                eap = eapol.child()
+                eapr = eap.child()
+                # Only client sends responses with identity
+                if eap.get_code() == eap.RESPONSE and eapr.get_type() == eapr.IDENTITY:
+                    self.subnet.sourcemac = e.get_ether_shost()
+
+        elif e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
             ip = e.child()
             ttl = ip.get_ip_ttl()
             # Uneven but not 1 or 255 ttl means it's probably coming from a router
@@ -61,7 +72,7 @@ class DecoderThread(Thread):
                 self.subnet.sourcemac = e.get_ether_dhost()
                 self.subnet.sourceaddress = ip.get_ip_dst()
 
-        if e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
+        elif e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
             arp = e.child()
             self.subnet.registeraddress(arp.get_ar_tpa())
             self.subnet.registeraddress(arp.get_ar_spa())
