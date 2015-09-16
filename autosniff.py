@@ -6,7 +6,7 @@ import sys
 import os
 import time
 import argparse
-
+import subprocess
 import struct
 import re
 from threading import Thread
@@ -18,6 +18,10 @@ import impacket
 import impacket.eap
 import impacket.ImpactPacket
 from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
+
+
+def cmd(c):
+    return subprocess.check_output(c, shell=True)
 
 
 class DecoderThread(Thread):
@@ -159,10 +163,10 @@ class Subnet:
 
     def get_sourcemac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
-        return ethernet.as_eth_addr(self.sourcemac)
+        temp = ethernet.as_eth_addr(self.sourcemac)
+        return re.sub(r':(\d):', r':0\1:', temp)
 
     def __str__(self):
-        ethernet = impacket.ImpactPacket.Ethernet()
         header = "Network config: \n"
         output = ""
         if self.minaddress and self.maxaddress:
@@ -170,7 +174,7 @@ class Subnet:
 
         if self.sourcemac and self.gatewaymac:
             output += "source: %s gateway: %s\n" %\
-                      (ethernet.as_eth_addr(self.sourcemac), ethernet.as_eth_addr(self.gatewaymac))
+                      (self.get_sourcemac(), self.get_gatewaymac())
 
         if self.sourceaddress:
             output += "source ip: %s gateway ip: %s\n" % (self.sourceaddress, self.gatewayaddress)
@@ -186,11 +190,8 @@ class Netfilter:
     subnet = None
     bridge = None
 
-    switchsidemac = None
     radiosilence = False
     gatewayinterface = "ethX"
-    bridgeinterface = "mibr"
-    bridgeip = "169.254.66.77"
 
     def __init__(self, subnet, bridge):
         self.subnet = subnet
@@ -219,51 +220,21 @@ class Netfilter:
 
     def updatetables(self):
         self.flushtables()
-        print "searching for mac: %s ..." % self.subnet.get_gatewaymac()
-        f = os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" %
-                     (self.bridgeinterface, self.subnet.get_gatewaymac()))
-        portnumber = f.read().rstrip()
-        f.close()
-        if portnumber == "":
-            print "portnumber not found bailing"
-            return False
-        print "portnumber is: %s" % portnumber
-        run = "brctl showstp %s | grep '(%s)' | head -n1 | awk '{print $1}'" % \
-              (self.bridgeinterface, portnumber)
-        print run
-
-        x = os.popen(run)
-        interface = x.read()
-        x.close()
-        interface = interface.rstrip()
-        print "got interface: %s .." % interface
-        if interface == "":
-            print "error getting interface is the bridge setup right?"
-            return False
-        print "switchside interface: %s" % interface
-        self.gatewayinterface = interface
-        f = os.popen("ip link show %s" % interface)
-        result = f.read()
-        f.close()
-        matches = re.search("..:..:..:..:..:..", result)
-        print "switchsidemac: %s" % matches.group(0)
-        self.switchsidemac = matches.group(0)
-        os.system("macchanger -m %s %s" % (self.switchsidemac, self.bridge.bridgename))
         print "Updating netfilter"
-        os.system("ip addr add 169.254.66.77/24 dev mibr")
+        os.system("ip addr add 169.254.66.77/24 dev %s" % self.bridge.bridgename)
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.switchsidemac, self.gatewayinterface, self.subnet.get_sourcemac()))
+                  (self.bridge.ifmacs[self.bridge.switchsideint], self.gatewayinterface, self.subnet.get_sourcemac()))
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.switchsidemac, self.bridgeinterface, self.subnet.get_sourcemac()))
+                  (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.bridgename, self.subnet.get_sourcemac()))
 
-        os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridgeinterface, self.subnet.get_gatewaymac()))
+        os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridge.bridgename, self.subnet.get_gatewaymac()))
         print "[*] Setting up layer 3 NAT"
         os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p tcp -j SNAT --to %s:61000-62000" %
-                  (self.bridgeinterface,  self.subnet.sourceaddress))
+                  (self.bridge.bridgename,  self.subnet.sourceaddress))
         os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p udp -j SNAT --to %s:61000-62000" %
-                  (self.bridgeinterface,  self.subnet.sourceaddress))
+                  (self.bridge.bridgename,  self.subnet.sourceaddress))
         os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p icmp -j SNAT --to %s" %
-                  (self.bridgeinterface,  self.subnet.sourceaddress))
+                  (self.bridge.bridgename,  self.subnet.sourceaddress))
         if not self.radiosilence:
             os.system("ebtables -D OUTPUT -j DROP")
             os.system("arptables -D OUTPUT -j DROP")
@@ -274,14 +245,19 @@ class Netfilter:
 class Bridge:
     subnet = None
     bridgename = None
+    ifmacs = {}
     interfaces = []
+    switchsideint = None
+    clientsiteint = None
 
-    def __init__(self, bridgename, interfaces):
+    def __init__(self, bridgename, interfaces, subnet):
         self.bridgename = bridgename
         self.interfaces = interfaces
+        self.subnet = subnet
         os.system("brctl addbr %s" % bridgename)
 
         for interface in [self.bridgename] + self.interfaces:
+            self.ifmacs.update({interface: self.getmac(interface)})
             os.system("ip link set %s down" % interface)
             if not args.enable_ipv6:
                 os.system("sysctl -w net.ipv6.conf.%s.disable_ipv6=1" % interface)
@@ -295,6 +271,32 @@ class Bridge:
 
         # Allow 802.1X traffic to pass the bridge
         os.system("echo 8 > /sys/class/net/mibr/bridge/group_fwd_mask")
+
+    def getmac(self, iface):
+        res = cmd("ip link show %s" % iface)
+        return re.search("..:..:..:..:..:..", res).group(0)
+
+    def srcmac2bridgeint(self, srcmac):
+        print "searching for mac: %s ..." % srcmac
+        portnumber = cmd("brctl showmacs %s | grep %s | awk '{print $1}'" %
+                         (self.bridgename, srcmac)).rstrip()
+        if not portnumber:
+            print "portnumber not found bailing"
+            return False
+        print "portnumber is: %s" % portnumber
+        interface = cmd("brctl showstp %s | grep '(%s)' | head -n1 | awk '{print $1}'" %
+                        (self.bridgename, portnumber)).rstrip()
+        print "got interface: %s .." % interface
+        if not interface:
+            print "error getting interface, is the bridge setup right?"
+            return False
+        return interface
+
+    def setinterfacesides(self):
+        self.switchsideint = self.srcmac2bridgeint(self.subnet.get_gatewaymac())
+        print "switchside interface: %s - %s" % (self.switchsideint, self.ifmacs[self.switchsideint])
+        self.clientsiteint = self.srcmac2bridgeint(self.subnet.get_sourcemac())
+        print "clientside interface: %s - %s" % (self.clientsiteint, self.ifmacs[self.clientsiteint])
 
     def up(self):
         for interface in [self.bridgename] + self.interfaces:
@@ -323,8 +325,8 @@ def main():
             print "Command '%s' is missing. Please install." % d
             sys.exit(1)
 
-    bridge = Bridge("mibr", args.ifaces)
     subnet = Subnet()
+    bridge = Bridge("mibr", args.ifaces, subnet)
     netfilter = Netfilter(subnet, bridge)
     arptable = ArpTable()
 
@@ -342,6 +344,7 @@ def main():
             if subnet.sourceaddress and subnet.gatewaymac and subnet.sourcemac:
                 print subnet
 
+                bridge.setinterfacesides()
                 netfilter.updatetables()
                 break
             else:
