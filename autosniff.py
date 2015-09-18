@@ -85,11 +85,21 @@ class DecoderThread(Thread):
                             self.subnet.clientmac = e.get_ether_dhost()
                             self.subnet.gatewayip = self.subnet.int2ip(dhcp.getOptionValue("router")[0])
                             self.subnet.gatewaymac = e.get_ether_shost()
+                            self.subnet.subnetmask = self.subnet.ip2array(
+                                self.subnet.int2ip(dhcp.getOptionValue("subnet-mask")))
+                            self.subnet.subnet = self.subnet.ip2array(self.subnet.int2ip(
+                                dhcp.getOptionValue("subnet-mask") & bootp["yiaddr"]))
+                            self.subnet.dhcp = True
                         elif dhcp.getOptionValue('message-type') == dhcp.DHCPOFFER:
                             self.subnet.clientip = self.subnet.int2ip(bootp["yiaddr"])
                             self.subnet.clientmac = e.get_ether_dhost()
                             self.subnet.gatewayip = self.subnet.int2ip(dhcp.getOptionValue("router")[0])
                             self.subnet.gatewaymac = e.get_ether_shost()
+                            self.subnet.subnetmask = self.subnet.ip2array(
+                                self.subnet.int2ip(dhcp.getOptionValue("subnet-mask")))
+                            self.subnet.subnet = self.subnet.ip2array(self.subnet.int2ip(
+                                dhcp.getOptionValue("subnet-mask") & bootp["yiaddr"]))
+                            self.subnet.dhcp = True
 
             else:
                 ttl = ip.get_ip_ttl()
@@ -139,6 +149,8 @@ class Subnet:
     maxaddress = None
     clientip = ""
     gatewayip = ""
+    subnetmask = None
+    dhcp = False
 
     def registeraddress(self, ip_array):
         if self.printip(ip_array) == "0.0.0.0":
@@ -167,6 +179,10 @@ class Subnet:
         ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
         return ip_string
 
+    def ip2array(self, ip):
+        ip_array = struct.unpack('BBBB', socket.inet_aton(ip))
+        return ip_array
+
     def ip2int(self, addr):
         return struct.unpack("!I", socket.inet_aton(addr))[0]
 
@@ -174,16 +190,19 @@ class Subnet:
         return socket.inet_ntoa(struct.pack("!I", addr))
 
     def getcidr(self):
-        if self.maxaddress and self.minaddress:
-            bits = 0
-            discovered_hosts = self.maxaddress[3] - self.minaddress[3] + 1
-            hosts = 0
-            while hosts < discovered_hosts and bits <= 8:
-                bits += 1
-                hosts = 2**bits
-            return bits
+        if self.dhcp and self.subnet:
+            return bin(self.ip2int(self.printip(self.subnetmask))).count("1")
         else:
-            return 0
+            if self.maxaddress and self.minaddress:
+                bits = 0
+                discovered_hosts = self.maxaddress[3] - self.minaddress[3] + 1
+                hosts = 0
+                while hosts < discovered_hosts and bits <= 8:
+                    bits += 1
+                    hosts = 2**bits
+                return bits
+            else:
+                return 0
 
     def get_gatewaymac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
@@ -198,12 +217,14 @@ class Subnet:
     def __str__(self):
         header = "Network config: \n"
         output = ""
-        if self.minaddress and self.maxaddress:
-            output += "cidr bits: %i\n" % self.getcidr()
 
-        if self.clientmac and self.gatewaymac:
-            output += "source: %s gateway: %s\n" %\
-                      (self.get_clientmac(), self.get_gatewaymac())
+        output += "dhcp seen: %s\n" % str(self.dhcp)
+
+        if not self.dhcp and self.minaddress and self.maxaddress:
+            output += "cidr bits: %i\n" % self.getcidr()
+        elif self.dhcp and self.subnet:
+            output += "subnet: %s / netmask: %s / cidr: %i\n" % \
+                      (self.printip(self.subnet), self.printip(self.subnetmask), self.getcidr())
 
         if self.clientip:
             output += "source ip: %s gateway ip: %s\n" % (self.clientip, self.gatewayip)
