@@ -16,6 +16,7 @@ import pcapy
 from pcapy import open_live
 import impacket
 import impacket.eap
+import impacket.dhcp
 import impacket.ImpactPacket
 from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
 
@@ -69,12 +70,34 @@ class DecoderThread(Thread):
 
         elif e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
             ip = e.child()
-            ttl = ip.get_ip_ttl()
-            # Uneven but not 1 or 255 ttl means it's probably coming from a router
-            if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
-                self.subnet.gatewaymac = e.get_ether_shost()
-                self.subnet.clientmac = e.get_ether_dhost()
-                self.subnet.clientip = ip.get_ip_dst()
+            if isinstance(ip.child(), impacket.ImpactPacket.UDP):
+                udp = ip.child()
+                if isinstance(udp.child(), impacket.dhcp.BootpPacket):
+                    bootp = udp.child()
+                    if isinstance(bootp.child(), impacket.dhcp.DhcpPacket):
+                        dhcp = bootp.child()
+                        if dhcp.getOptionValue('message-type') == dhcp.DHCPDISCOVER:
+                            self.subnet.clientmac = e.get_ether_shost()
+                        elif dhcp.getOptionValue('message-type') == dhcp.DHCPREQUEST:
+                            self.subnet.clientmac = e.get_ether_shost()
+                        elif dhcp.getOptionValue('message-type') == dhcp.DHCPACK:
+                            self.subnet.clientip = self.subnet.int2ip(bootp["yiaddr"])
+                            self.subnet.clientmac = e.get_ether_dhost()
+                            self.subnet.gatewayip = self.subnet.int2ip(dhcp.getOptionValue("router")[0])
+                            self.subnet.gatewaymac = e.get_ether_shost()
+                        elif dhcp.getOptionValue('message-type') == dhcp.DHCPOFFER:
+                            self.subnet.clientip = self.subnet.int2ip(bootp["yiaddr"])
+                            self.subnet.clientmac = e.get_ether_dhost()
+                            self.subnet.gatewayip = self.subnet.int2ip(dhcp.getOptionValue("router")[0])
+                            self.subnet.gatewaymac = e.get_ether_shost()
+
+            else:
+                ttl = ip.get_ip_ttl()
+                # Uneven but not 1 or 255 ttl means it's probably coming from a router
+                if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
+                    self.subnet.gatewaymac = e.get_ether_shost()
+                    self.subnet.clientmac = e.get_ether_dhost()
+                    self.subnet.clientip = ip.get_ip_dst()
 
         elif e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
             arp = e.child()
@@ -143,6 +166,12 @@ class Subnet:
     def printip(self, ip_array):
         ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
         return ip_string
+
+    def ip2int(self, addr):
+        return struct.unpack("!I", socket.inet_aton(addr))[0]
+
+    def int2ip(self, addr):
+        return socket.inet_ntoa(struct.pack("!I", addr))
 
     def getcidr(self):
         if self.maxaddress and self.minaddress:
