@@ -137,7 +137,7 @@ class ArpTable:
     def updatekernel(self):
         for ip, mac in self.table.iteritems():
             os.system("arp -i mibr -s %s %s" % (ip, mac))
-            os.system("ip route add %s/32 dev mibr" % ip)
+            os.system("ip route add %s/32 dev mibr 2>/dev/null" % ip)
 
 
 # Only supports /24 or smaller
@@ -227,7 +227,16 @@ class Subnet:
                       (self.printip(self.subnet), self.printip(self.subnetmask), self.getcidr())
 
         if self.clientip:
-            output += "source ip: %s gateway ip: %s\n" % (self.clientip, self.gatewayip)
+            output += "client ip: %s\n" % self.clientip
+
+        if self.clientmac:
+            output += "client mac: %s\n" % self.get_clientmac()
+
+        if self.gatewayip:
+            output += "gateway ip: %s\n" % self.gatewayip
+
+        if self.gatewaymac:
+            output += "gateway mac: %s\n" % self.get_gatewaymac()
 
         if output == "":
             return "Network config unknown"
