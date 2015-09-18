@@ -398,7 +398,7 @@ def main():
             else:
                 print "not enough info..."
                 print subnet
-            time.sleep(20)
+            time.sleep(5)
 
         # arp setup
         while True:
@@ -406,7 +406,7 @@ def main():
             f.write(str(subnet))
             f.close()
             arptable.updatekernel()
-            time.sleep(20)
+            time.sleep(5)
 
     except KeyboardInterrupt:
         thread.stop()
