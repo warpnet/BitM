@@ -1,7 +1,0 @@
-#!/bin/sh
-
-iptables -F
-iptables -F -t nat
-ebtables -t nat -F
-ebtables -F
-arptables -F
