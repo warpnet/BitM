@@ -280,6 +280,7 @@ class Netfilter:
 
         print "[*] Setting up layer 2 NAT"
         os.system("ip addr add 169.254.66.77/24 dev %s" % self.bridge.bridgename)
+        os.system("ebtables -A OUTPUT -p 0x0806 -j DROP")  # _really_ block arp e.g. for nmap
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
                   (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.switchsideint, self.subnet.get_clientmac()))
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
@@ -304,6 +305,15 @@ class Netfilter:
 
         os.system("ip route del default")
         os.system("ip route add default via 169.254.66.55 dev mibr")
+        print """\
+
+************************************************************************
+* Warning!                                                             *
+* nmap uses raw sockets so NAT will NOT work for host discovery.       *
+* For your own safety we block all outgoing ARP traffic with ebtables. *
+* You will need to provide the --send-ip parameter to get any results. *
+************************************************************************
+"""
 
 
 class Bridge:
