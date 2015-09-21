@@ -249,7 +249,6 @@ class Netfilter:
     subnet = None
     bridge = None
 
-    radiosilence = False
     def __init__(self, subnet, bridge):
         self.subnet = subnet
         self.bridge = bridge
@@ -278,23 +277,31 @@ class Netfilter:
     def updatetables(self):
         self.flushtables()
         print "Updating netfilter"
+
+        print "[*] Setting up layer 2 NAT"
         os.system("ip addr add 169.254.66.77/24 dev %s" % self.bridge.bridgename)
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
                   (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.switchsideint, self.subnet.get_clientmac()))
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.bridgename, self.subnet.get_clientmac()))
-
+                  (self.bridge.ifmacs[self.bridge.clientsiteint], self.bridge.clientsiteint, self.subnet.get_gatewaymac()))
         os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridge.bridgename, self.subnet.get_gatewaymac()))
+
         print "[*] Setting up layer 3 NAT"
-        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p tcp -j SNAT --to %s:61000-62000" %
-                  (self.bridge.bridgename,  self.subnet.clientip))
-        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p udp -j SNAT --to %s:61000-62000" %
-                  (self.bridge.bridgename,  self.subnet.clientip))
-        os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p icmp -j SNAT --to %s" %
-                  (self.bridge.bridgename,  self.subnet.clientip))
-        if not self.radiosilence:
-            os.system("ebtables -D OUTPUT -j DROP")
-            os.system("arptables -D OUTPUT -j DROP")
+        sports = {'tcp': ':61000-62000', 'udp': ':61000-62000', 'icmp': ''}
+        for proto in ['tcp', 'udp', 'icmp']:
+            os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -d %s -p %s -j SNAT --to %s%s" %
+                      (self.bridge.bridgename,  self.subnet.clientip, proto, self.subnet.gatewayip, sports[proto]))
+            os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p %s -j SNAT --to %s%s" %
+                      (self.bridge.bridgename,  proto, self.subnet.clientip, sports[proto]))
+
+        print "[*] NAT is ready. Allow OUTPUT on interfaces"
+        os.system("ebtables -A OUTPUT -o %s -j ACCEPT" %
+                  self.bridge.clientsiteint)
+        os.system("ebtables -A OUTPUT -o %s -j ACCEPT" %
+                  self.bridge.switchsideint)
+        os.system("iptables -A OUTPUT -o %s -s %s -j ACCEPT" %
+                  (self.bridge.bridgename, "169.254.66.77"))
+
         os.system("ip route del default")
         os.system("ip route add default via 169.254.66.55 dev mibr")
 
@@ -312,6 +319,7 @@ class Bridge:
         self.interfaces = interfaces
         self.subnet = subnet
         os.system("brctl addbr %s" % bridgename)
+        os.system("macchanger -r %s" % bridgename)
 
         for interface in [self.bridgename] + self.interfaces:
             self.ifmacs.update({interface: self.getmac(interface)})
