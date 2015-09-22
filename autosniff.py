@@ -303,6 +303,17 @@ class Netfilter:
         os.system("iptables -A OUTPUT -o %s -s %s -j ACCEPT" %
                   (self.bridge.bridgename, "169.254.66.77"))
 
+        if args.hidden_tcp or args.hidden_udp:
+            print "[*] Create hidden services"
+            for tcp in args.hidden_tcp:
+                rport, lport = tcp.split(':')
+                os.system("iptables -t nat -A PREROUTING -i %s -d %s -p tcp --dport %s -j DNAT --to 169.254.66.77:%s" %
+                          (self.bridge.bridgename, self.subnet.clientip, rport, lport))
+            for udp in args.hidden_udp:
+                rport, lport = udp.split(':')
+                os.system("iptables -t nat -A PREROUTING -i %s -d %s -p udp --dport %s -j DNAT --to 169.254.66.77:%s" %
+                          (self.bridge.bridgename, self.subnet.clientip, rport, lport))
+
         os.system("ip route del default")
         os.system("ip route add default via 169.254.66.55 dev mibr")
         print """\
@@ -444,9 +455,23 @@ def main():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BitM')
+    parser.add_argument('-6', '--enable-ipv6', action='store_true')
+    parser.add_argument('-t', '--hidden-tcp', nargs='*', default=[],
+                        metavar="<rPORT>:<lPORT>",
+                        help="Create a hidden service where <lPORT> is"
+                             "the local port the service is listening on and "
+                             "<rPORT> is the remote port you will connect to "
+                             "from the network. The service needs to listen "
+                             "on 169.254.66.77 or <any>.")
+    parser.add_argument('-u', '--hidden-udp', nargs='*', default=[],
+                        metavar="<rPORT>:<lPORT>",
+                        help="Create a hidden service where <lPORT> is"
+                             "the local port the service is listening on and "
+                             "<rPORT> is the remote port you will connect to "
+                             "from the network. The service needs to listen "
+                             "on 169.254.66.77 or <any>.")
     parser.add_argument('ifaces', metavar='IFACE', nargs='*',
                         default=['eth1', 'eth2'], help='Two interfaces')
-    parser.add_argument('-6', '--enable-ipv6', action='store_true')
     args = parser.parse_args()
 
     if len(args.ifaces) not in (0, 2):
