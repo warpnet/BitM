@@ -207,8 +207,9 @@ class DecoderThread(Thread):
 
         elif e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
             arp = e.child()
-            self.subnet.registeraddress(arp.get_ar_tpa())
-            self.subnet.registeraddress(arp.get_ar_spa())
+            if not self.subnet.dhcp:
+                self.subnet.registeraddress(arp.get_ar_tpa())
+                self.subnet.registeraddress(arp.get_ar_spa())
 
             if arp.get_op_name(arp.get_ar_op()) == "REPLY":
                 print "got arp reply"
