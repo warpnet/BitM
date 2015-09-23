@@ -197,12 +197,13 @@ class DecoderThread(Thread):
                             self.subnet.dhcp = True
 
             else:
-                ttl = ip.get_ip_ttl()
-                # Uneven but not 1 or 255 ttl means it's probably coming from a router
-                if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
-                    self.subnet.gatewaymac = e.get_ether_shost()
-                    self.subnet.clientmac = e.get_ether_dhost()
-                    self.subnet.clientip = ip.get_ip_dst()
+                if not self.subnet.dhcp:
+                    ttl = ip.get_ip_ttl()
+                    # Uneven but not 1 or 255 ttl means it's probably coming from a router
+                    if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
+                        self.subnet.gatewaymac = e.get_ether_shost()
+                        self.subnet.clientmac = e.get_ether_dhost()
+                        self.subnet.clientip = ip.get_ip_dst()
 
         elif e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
             arp = e.child()
