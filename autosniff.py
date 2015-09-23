@@ -354,6 +354,7 @@ class Netfilter:
 
     def inittables(self):
         self.flushtables()
+        os.system("iptables -A OUTPUT -o lo -j ACCEPT")
         os.system("iptables -P OUTPUT DROP")
         os.system("ebtables -P OUTPUT DROP")
         os.system("arptables -P OUTPUT DROP")
