@@ -412,8 +412,7 @@ class Netfilter:
 
         os.system("ip route del default")
         os.system("ip route add default via 169.254.66.55 dev mibr")
-        print """\
-
+        print """
 ************************************************************************
 * Warning!                                                             *
 * nmap uses raw sockets so NAT will NOT work for host discovery.       *
@@ -532,7 +531,14 @@ def main():
             print subnet
 
             bridge.setinterfacesides()
-            netfilter.updatetables()
+            if not args.radiosilence:
+                netfilter.updatetables()
+            else:
+                print """
+******************************************************
+* Radiosilence is enabled.                           *
+* Not setting up NAT and disallow outgoing traffic." *
+******************************************************\n"""
             break
         else:
             print "not enough info..."
@@ -551,6 +557,10 @@ def main():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BitM')
     parser.add_argument('-6', '--enable-ipv6', action='store_true')
+    parser.add_argument('-q', '--radiosilence', action='store_true',
+                        help="Don't set up NAT and disallow any outgoing "
+                             "traffic. This is useful if you just want to "
+                             "sniff the traffic.")
     parser.add_argument('-t', '--hidden-tcp', nargs='*', default=[],
                         metavar="<rPORT>:<lPORT>",
                         help="Create a hidden service where <lPORT> is"
