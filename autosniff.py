@@ -4,6 +4,7 @@
 
 import sys
 import os
+import signal
 import time
 import argparse
 import subprocess
@@ -23,6 +24,20 @@ from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
 
 def cmd(c):
     return subprocess.check_output(c, shell=True)
+
+# Signal handler class for Ctrl-c
+class SignalHandler():
+    def __init__(self, decoder, bridge, netfilter):
+        self.decoder = decoder
+        self.bridge = bridge
+        self.netfilter = netfilter
+        signal.signal(signal.SIGINT, self.signal_handler)
+
+    def signal_handler(self, signal, frame):
+        self.decoder.stop()
+        self.bridge.destroy()
+        self.netfilter.reset()
+        sys.exit(0)
 
 
 class DecoderThread(Thread):
@@ -417,40 +432,34 @@ def main():
     arptable = ArpTable()
 
     bridge.up()
+    decoder = DecoderThread(bridge, subnet, arptable)
 
-    # Start sniffing thread and finish main thread.
-    thread = DecoderThread(bridge, subnet, arptable)
-    thread.start()
+    sig = SignalHandler(decoder, bridge, netfilter)
+
+    decoder.start()
 
     print "Listening on %s: net=%s, mask=%s, linktype=%d" % \
-          (bridge.bridgename, thread.pcap.getnet(), thread.pcap.getmask(), thread.pcap.datalink())
+          (bridge.bridgename, decoder.pcap.getnet(), decoder.pcap.getmask(), decoder.pcap.datalink())
 
-    try:
-        while True:
-            if subnet.clientip and subnet.gatewaymac and subnet.clientmac:
-                print subnet
+    while True:
+        if subnet.clientip and subnet.gatewaymac and subnet.clientmac:
+            print subnet
 
-                bridge.setinterfacesides()
-                netfilter.updatetables()
-                break
-            else:
-                print "not enough info..."
-                print subnet
-            time.sleep(5)
+            bridge.setinterfacesides()
+            netfilter.updatetables()
+            break
+        else:
+            print "not enough info..."
+            print subnet
+        time.sleep(5)
 
-        # arp setup
-        while True:
-            f = open('/root/subnetinfo', 'w')
-            f.write(str(subnet))
-            f.close()
-            arptable.updatekernel()
-            time.sleep(5)
-
-    except KeyboardInterrupt:
-        thread.stop()
-        bridge.destroy()
-        netfilter.reset()
-        sys.exit(0)
+    # arp setup
+    while True:
+        f = open('/root/subnetinfo', 'w')
+        f.write(str(subnet))
+        f.close()
+        arptable.updatekernel()
+        time.sleep(5)
 
 
 if __name__ == '__main__':
