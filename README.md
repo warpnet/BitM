@@ -19,30 +19,25 @@ Deps
 python2
 pycrypto
 python2-pcapy
-impacket
+impacket from https://github.com/c0d3z3r0/impacket
 libpcap
 bridge-utils
 ebtables
 iptables
 arptables
 hostapd
+macchanger
+
 
 Stealth
 ========
 
-```
-[root@alarm ~]# cat /etc/sysctl.d/40-ipv6.conf 
-# Disable IPv6
-
-net.ipv6.conf.all.disable_ipv6 = 1
-#net.ipv6.conf.interface0.disable_ipv6 = 1
-#net.ipv6.conf.interfaceN.disable_ipv6 = 1
-```
-
-  rm /etc/netctl/eth0
+Use the `-q` parameter to prevent any output originating from us.
+This is for sniffing-only purpose.
 
 
-
+Hostapd
+========
 
 hostapd.conf
 
@@ -59,6 +54,17 @@ wpa_ptk_rekey=600
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 ```
+
+```bash
+ifconfig wlan0 169.254.44.44/24
+ifconfig wlan0 up
+# dhcpd ...
+dhcpd -4 -pf /run/dhcpd4.pid wlan0
+# ... or udhcpd
+udhcpd /etc/udhcpd-wlan0.conf
+hostapd -B ./hostapd.conf
+```
+
 
 License
 =======
