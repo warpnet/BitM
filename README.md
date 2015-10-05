@@ -21,7 +21,7 @@ It can be used on a beaglebone/raspberry pi/... or on any laptop with two ethern
 * Python packages: `pip install argparse pcapy`
 * Impacket
 
-  ~~~
+  ~~~sh
   git clone https://github.com/c0d3z3r0/impacket.git
   cd impacket
   python ./setup.py install
