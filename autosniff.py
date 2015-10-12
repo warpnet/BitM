@@ -137,11 +137,12 @@ class DecoderThread(Thread):
         self.bridge = bridge
         self.subnet = subnet
         self.arptable = arptable
-        self.running = True
 
         Thread.__init__(self)
 
     def run(self):
+        self.running = True
+
         # Sniff ad infinitum.
         # PacketHandler shall be invoked by pcap for every packet.
         while self.running:
