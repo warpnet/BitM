@@ -227,7 +227,8 @@ class ArpTable:
         return ip_string
 
     def updatekernel(self):
-        for ip, mac in self.table.iteritems():
+        tmptab = self.table.copy()
+        for ip, mac in tmptab.iteritems():
             os.system("arp -i mibr -s %s %s" % (ip, mac))
             os.system("ip route add %s/32 dev mibr 2>/dev/null" % ip)
 
