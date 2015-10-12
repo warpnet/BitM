@@ -369,7 +369,7 @@ class Netfilter:
         os.system("arptables -P OUTPUT ACCEPT")
 
     def updatetables(self):
-        self.flushtables()
+        self.inittables()
         print "Updating netfilter"
 
         print "[*] Setting up layer 2 NAT"
