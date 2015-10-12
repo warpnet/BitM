@@ -179,19 +179,10 @@ class DecoderThread(Thread):
                             self.subnet.clientmac = e.get_ether_shost()
                         elif dhcp.getOptionValue('message-type') == dhcp.DHCPREQUEST:
                             self.subnet.clientmac = e.get_ether_shost()
-                        elif dhcp.getOptionValue('message-type') == dhcp.DHCPACK:
-                            self.subnet.clientip = self.subnet.int2ip(bootp["yiaddr"])
-                            self.subnet.clientmac = e.get_ether_dhost()
-                            self.subnet.gatewayip = self.subnet.int2ip(dhcp.getOptionValue("router")[0])
-                            self.subnet.gatewaymac = e.get_ether_shost()
-                            self.subnet.subnetmask = self.subnet.ip2array(
-                                self.subnet.int2ip(dhcp.getOptionValue("subnet-mask")))
-                            self.subnet.subnet = self.subnet.ip2array(self.subnet.int2ip(
-                                dhcp.getOptionValue("subnet-mask") & bootp["yiaddr"]))
-                            self.subnet.dhcp = True
-                        elif dhcp.getOptionValue('message-type') == dhcp.DHCPOFFER:
-                            self.subnet.clientip = self.subnet.int2ip(bootp["yiaddr"])
-                            self.subnet.clientmac = e.get_ether_dhost()
+                        elif dhcp.getOptionValue('message-type') == dhcp.DHCPACK or \
+                                dhcp.getOptionValue('message-type') == dhcp.DHCPOFFER:
+                            if not self.subnet.clientip:
+                                self.subnet.clientip = self.subnet.int2ip(bootp["yiaddr"])
                             self.subnet.gatewayip = self.subnet.int2ip(dhcp.getOptionValue("router")[0])
                             self.subnet.gatewaymac = e.get_ether_shost()
                             self.subnet.subnetmask = self.subnet.ip2array(
