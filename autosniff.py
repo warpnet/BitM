@@ -143,8 +143,11 @@ class DecoderThread(Thread):
     def run(self):
         self.running = True
 
-        print "Resetting the link."
-        cmd("mii-tool -R %s" % ' '.join(self.bridge.interfaces))
+        # Reset the link
+        try:
+            cmd("mii-tool -R %s 2>/dev/null" % ' '.join(self.bridge.interfaces))
+        except:
+            pass
 
         # Sniff ad infinitum.
         # PacketHandler shall be invoked by pcap for every packet.
