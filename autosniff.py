@@ -408,7 +408,6 @@ class Netfilter:
                 os.system("iptables -t nat -A PREROUTING -i %s -d %s -p udp --dport %s -j DNAT --to 169.254.66.77:%s" %
                           (self.bridge.bridgename, self.subnet.clientip, rport, lport))
 
-        os.system("ip route del default")
         os.system("ip route add default via 169.254.66.55 dev mibr")
         print """
 ************************************************************************
