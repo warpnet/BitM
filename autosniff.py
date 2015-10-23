@@ -210,7 +210,7 @@ class DecoderThread(Thread):
                 self.subnet.registeraddress(arp.get_ar_spa())
 
             if arp.get_op_name(arp.get_ar_op()) == "REPLY":
-                print "got arp reply"
+                #print "got arp reply"
                 self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
             if arp.get_op_name(arp.get_ar_op()) == "REQUEST":
                 self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
@@ -223,7 +223,7 @@ class ArpTable:
         ip = self.printip(ip_array)
         if ip != "0.0.0.0":
             self.table[ip] = hw_address
-            print "%s : %s" % (ip, hw_address)
+            #print "%s : %s" % (ip, hw_address)
 
     def printip(self, ip_array):
         ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
