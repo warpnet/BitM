@@ -378,10 +378,10 @@ class Netfilter:
         print "[*] Setting up layer 2 NAT"
         os.system("ip addr add 169.254.66.77/24 dev %s" % self.bridge.bridgename)
         os.system("ebtables -A OUTPUT -p 0x0806 -j DROP")  # _really_ block arp e.g. for nmap
-        os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.bridge.ifmacs[self.bridge.switchsideint], self.bridge.switchsideint, self.subnet.get_clientmac()))
-        os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
-                  (self.bridge.ifmacs[self.bridge.clientsiteint], self.bridge.clientsiteint, self.subnet.get_gatewaymac()))
+        os.system("ebtables -t nat -A POSTROUTING -o %s -j snat --snat-arp --to-src %s" %
+                  (self.bridge.switchsideint, self.subnet.get_clientmac()))
+        os.system("ebtables -t nat -A POSTROUTING -o %s -j snat --snat-arp --to-src %s" %
+                  (self.bridge.clientsiteint, self.subnet.get_gatewaymac()))
         os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridge.bridgename, self.subnet.get_gatewaymac()))
 
         print "[*] Setting up layer 3 NAT"
